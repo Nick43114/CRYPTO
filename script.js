@@ -30,15 +30,14 @@ const I18N = {
     now: "Now"
   }
 };
+// Аліас для сумісності (якщо в браузері збереглося 'ua')
+I18N.ua = I18N.uk;
 
 const urlParams = new URLSearchParams(window.location.search);
-const paramLang = urlParams.get('lang') || tg?.initDataUnsafe?.start_param?.replace('lang_', '');
+let paramLang = urlParams.get('lang') || tg?.initDataUnsafe?.start_param?.replace('lang_', '') || localStorage.getItem("user_lang") || "uk";
 
-let currentLang = localStorage.getItem("user_lang") || "uk";
-if (paramLang) {
-  currentLang = (paramLang === 'en') ? 'en' : 'uk';
-  localStorage.setItem("user_lang", currentLang);
-}
+let currentLang = (paramLang === 'en') ? 'en' : 'uk';
+localStorage.setItem("user_lang", currentLang);
 
 const COINS = [
   "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
@@ -54,7 +53,6 @@ const klinesCache = {};
 let activeModalCoin = null;
 let activeModalTF = "1d";
 
-// Змінні для інтерактивного графіка
 let currentBigPrices = [];
 let lastHapticIndex = -1;
 let latestModalPrice = 0;
@@ -65,21 +63,29 @@ function fmt(x) {
   return "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Завантаження історичних свічок
+// Завантаження свічок з резервними серверами Binance
 async function fetchKlines(sym, interval = "1h", limit = 24) {
   const cacheKey = `${sym}_${interval}_${limit}`;
   if (klinesCache[cacheKey]) return klinesCache[cacheKey];
 
-  try {
-    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`);
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      const prices = data.map(k => parseFloat(k[4]));
-      klinesCache[cacheKey] = prices;
-      return prices;
-    }
-  } catch (e) {
-    console.error("Помилка свічок", e);
+  const hosts = [
+    "https://data-api.binance.vision",
+    "https://api.binance.com",
+    "https://api1.binance.com"
+  ];
+
+  for (const host of hosts) {
+    try {
+      const res = await fetch(`${host}/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const prices = data.map(k => parseFloat(k[4]));
+          klinesCache[cacheKey] = prices;
+          return prices;
+        }
+      }
+    } catch (e) {}
   }
   return [];
 }
@@ -131,7 +137,7 @@ function drawMiniSparkline(canvasId, prices) {
   ctx.stroke();
 }
 
-// Великий інтерактивний графік з точкою та прицілом
+// Великий інтерактивний графік
 function drawBigChart(prices, selectedIndex = null) {
   const canvas = document.getElementById("bigChartCanvas");
   if (!canvas || !prices || prices.length < 2) return;
@@ -158,7 +164,6 @@ function drawBigChart(prices, selectedIndex = null) {
     y: h - 15 - ((p - min) / range) * (h - 32)
   }));
 
-  // Градієнт заливки
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "rgba(240, 185, 11, 0.38)");
   grad.addColorStop(1, "rgba(240, 185, 11, 0.0)");
@@ -172,7 +177,6 @@ function drawBigChart(prices, selectedIndex = null) {
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Основна лінія графіка
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -182,11 +186,9 @@ function drawBigChart(prices, selectedIndex = null) {
   ctx.lineJoin = "round";
   ctx.stroke();
 
-  // Якщо користувач веде пальцем — малюємо приціл і точку
   if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < pts.length) {
     const selPt = pts[selectedIndex];
 
-    // 1. Вертикальна пунктирна лінія прицілу
     ctx.beginPath();
     ctx.setLineDash([4, 4]);
     ctx.moveTo(selPt.x, 0);
@@ -196,36 +198,21 @@ function drawBigChart(prices, selectedIndex = null) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 2. Горизонтальна пунктирна лінія до ціни
-    ctx.beginPath();
-    ctx.setLineDash([3, 3]);
-    ctx.moveTo(0, selPt.y);
-    ctx.lineTo(w, selPt.y);
-    ctx.strokeStyle = "rgba(240, 185, 11, 0.3)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // 3. Зовнішнє сяйво точки
     ctx.beginPath();
     ctx.arc(selPt.x, selPt.y, 9, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(240, 185, 11, 0.28)";
     ctx.fill();
 
-    // 4. Золоте кільце точки
     ctx.beginPath();
     ctx.arc(selPt.x, selPt.y, 5.5, 0, Math.PI * 2);
     ctx.fillStyle = "#F0B90B";
     ctx.fill();
 
-    // 5. Біле ядро всередині точки
     ctx.beginPath();
     ctx.arc(selPt.x, selPt.y, 2.8, 0, Math.PI * 2);
     ctx.fillStyle = "#FFFFFF";
     ctx.fill();
-
   } else {
-    // Якщо палець відпущено — звичайна пунктирна лінія останньої ціни
     const lastPt = pts[pts.length - 1];
     ctx.beginPath();
     ctx.setLineDash([4, 4]);
@@ -237,7 +224,6 @@ function drawBigChart(prices, selectedIndex = null) {
   }
 }
 
-// Обробка торкання пальцем графіка з вібровідгуком
 function handleTouchMove(e) {
   if (!currentBigPrices || currentBigPrices.length < 2) return;
   const canvas = document.getElementById("bigChartCanvas");
@@ -255,39 +241,245 @@ function handleTouchMove(e) {
   const ratio = (clampedX - startX) / (endX - startX);
   const index = Math.round(ratio * (currentBigPrices.length - 1));
 
-  // Якщо перейшли на нову точку — даємо тактильну вібрацію (клік)!
   if (index !== lastHapticIndex) {
     lastHapticIndex = index;
     if (tg?.HapticFeedback) {
-      tg.HapticFeedback.selectionChanged(); // Легкий тактильний клік Telegram
+      tg.HapticFeedback.selectionChanged();
     } else if (navigator.vibrate) {
       navigator.vibrate(8);
     }
   }
 
-  // Оновлюємо ціну в заголовку на ціну обраної точки
   const inspectedPrice = currentBigPrices[index];
-  document.getElementById("modalCoinPrice").textContent = fmt(inspectedPrice);
-  document.getElementById("modalCoinPrice").classList.add("inspecting");
+  const priceEl = document.getElementById("modalCoinPrice");
+  if (priceEl) {
+    priceEl.textContent = fmt(inspectedPrice);
+    priceEl.classList.add("inspecting");
+  }
 
   drawBigChart(currentBigPrices, index);
 }
 
 function handleTouchEnd() {
   lastHapticIndex = -1;
-  // Повертаємо останню актуальну ціну через 800 мс після відпускання
   setTimeout(() => {
     if (lastHapticIndex === -1 && latestModalPrice) {
-      document.getElementById("modalCoinPrice").textContent = fmt(latestModalPrice);
-      document.getElementById("modalCoinPrice").classList.remove("inspecting");
+      const priceEl = document.getElementById("modalCoinPrice");
+      if (priceEl) {
+        priceEl.textContent = fmt(latestModalPrice);
+        priceEl.classList.remove("inspecting");
+      }
       drawBigChart(currentBigPrices, null);
     }
   }, 800);
 }
 
-// Прив'язка сенсорних подій до полотна графіка
-const chartCanvas = document.getElementById("bigChartCanvas");
-if (chartCanvas) {
-  chartCanvas.addEventListener("touchstart", (e) => {
-    e.preventDefault();
-    handl
+async function openChartModal(sym, currentPrice) {
+  activeModalCoin = sym;
+  latestModalPrice = currentPrice;
+  const modal = document.getElementById("chartModal");
+  document.getElementById("modalCoinName").textContent = `${sym.replace("USDT", "")}/USDT`;
+  document.getElementById("modalCoinPrice").textContent = fmt(currentPrice);
+
+  modal.classList.remove("hidden");
+  if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
+
+  await updateBigChart();
+}
+
+async function updateBigChart() {
+  if (!activeModalCoin) return;
+  const t = I18N[currentLang] || I18N.uk;
+
+  let interval = "1h", limit = 24;
+  let timeLabels = ["00:00", "06:00", "12:00", "18:00", t.now];
+
+  if (activeModalTF === "7d") {
+    interval = "4h"; limit = 42;
+    timeLabels = ["7д", "5д", "3д", "1д", t.now];
+  } else if (activeModalTF === "1m") {
+    interval = "1d"; limit = 30;
+    timeLabels = ["30д", "20д", "10д", "5д", t.now];
+  } else if (activeModalTF === "1y") {
+    interval = "1d"; limit = 365;
+    timeLabels = [currentLang === 'uk' ? "1 р тому" : "1y ago", "9м", "6м", "3м", t.now];
+  } else if (activeModalTF === "2y") {
+    interval = "1d"; limit = 730;
+    timeLabels = [currentLang === 'uk' ? "2 р тому" : "2y ago", "1.5р", "1р", "6м", t.now];
+  } else if (activeModalTF === "5y") {
+    interval = "1w"; limit = 260;
+    timeLabels = [currentLang === 'uk' ? "5 р тому" : "5y ago", "4р", "2.5р", "1р", t.now];
+  }
+
+  const labelsRow = document.getElementById("timeLabelsRow");
+  if (labelsRow) {
+    labelsRow.innerHTML = timeLabels.map(l => `<span>${l}</span>`).join("");
+  }
+
+  currentBigPrices = await fetchKlines(activeModalCoin, interval, limit);
+  drawBigChart(currentBigPrices, null);
+}
+
+function verdict(s) {
+  const price = parseFloat(s.lastPrice);
+  const low = parseFloat(s.lowPrice);
+  const high = parseFloat(s.highPrice);
+  const t = I18N[currentLang] || I18N.uk;
+
+  if (price <= low * (1 + LOW_ZONE / 100)) return ["buy", t.signalBuy];
+  if (price >= high * (1 - HIGH_ZONE / 100)) return ["sell", t.signalSell];
+  return ["wait", t.signalWait];
+}
+
+// Завантаження котирувань 10 монет (Миттєве виконання)
+async function load() {
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn) refreshBtn.classList.add("spinning");
+
+  const symbolsParam = encodeURIComponent(JSON.stringify(COINS));
+  const urls = [
+    `https://data-api.binance.vision/api/v3/ticker/24hr?symbols=${symbolsParam}`,
+    `https://api.binance.com/api/v3/ticker/24hr?symbols=${symbolsParam}`,
+    `https://api1.binance.com/api/v3/ticker/24hr?symbols=${symbolsParam}`
+  ];
+
+  let data = null;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        data = await res.json();
+        if (Array.isArray(data) && data.length > 0) break;
+      }
+    } catch (e) {}
+  }
+
+  if (data && Array.isArray(data)) {
+    const map = {};
+    data.forEach(item => { map[item.symbol] = item; });
+    lastMarketData = COINS.map(s => map[s]).filter(Boolean);
+    render(lastMarketData);
+  } else {
+    const t = I18N[currentLang] || I18N.uk;
+    document.getElementById("updated").textContent = t.networkError;
+  }
+
+  if (refreshBtn) {
+    setTimeout(() => refreshBtn.classList.remove("spinning"), 500);
+  }
+}
+
+function render(items) {
+  const grid = document.getElementById("grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  const t = I18N[currentLang] || I18N.uk;
+
+  items.forEach(s => {
+    const sym = s.symbol;
+    const name = sym.replace("USDT", "");
+    const price = parseFloat(s.lastPrice);
+    const low = parseFloat(s.lowPrice);
+    const high = parseFloat(s.highPrice);
+    const chg = parseFloat(s.priceChangePercent);
+    const isUp = chg >= 0;
+    const [cls, text] = verdict(s);
+
+    let rangePct = Math.max(0, Math.min(100, ((price - low) / (high - low)) * 100));
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-top">
+        <span class="coin-symbol">${name}</span>
+        <span class="coin-pair">/USDT</span>
+      </div>
+      <div class="price">${fmt(price)}</div>
+      <div class="change ${isUp ? "up" : "down"}">${isUp ? "+ " : ""}${chg.toFixed(2)}%</div>
+
+      <div class="card-chart-wrap">
+        <canvas class="mini-chart-canvas" id="chart-${sym}"></canvas>
+      </div>
+
+      <div class="signal-badge ${cls}">${text}</div>
+      <div class="range-container">
+        <div class="range-bar-bg">
+          <div class="range-bar-fill" style="width: ${rangePct}%;"></div>
+        </div>
+        <div class="range-labels">
+          <span>L: ${fmt(low)}</span>
+          <span>H: ${fmt(high)}</span>
+        </div>
+      </div>
+    `;
+
+    card.onclick = () => openChartModal(sym, price);
+    grid.appendChild(card);
+
+    fetchKlines(sym, "1h", 24).then(prices => {
+      drawMiniSparkline(`chart-${sym}`, prices);
+    });
+  });
+
+  const now = new Date();
+  document.getElementById("updated").textContent =
+    t.updated + " " + now.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function selectLanguage(lang) {
+  currentLang = lang;
+  localStorage.setItem("user_lang", lang);
+  document.getElementById("langModal").classList.add("hidden");
+  document.getElementById("currentLangLabel").textContent = (I18N[currentLang] || I18N.uk).langShort;
+  if (lastMarketData.length) render(lastMarketData);
+}
+
+// Прив'язка подій після завантаження DOM
+document.addEventListener("DOMContentLoaded", () => {
+  const chartCanvas = document.getElementById("bigChartCanvas");
+  if (chartCanvas) {
+    chartCanvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      handleTouchMove(e);
+    }, { passive: false });
+
+    chartCanvas.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      handleTouchMove(e);
+    }, { passive: false });
+
+    chartCanvas.addEventListener("touchend", handleTouchEnd);
+    chartCanvas.addEventListener("touchcancel", handleTouchEnd);
+
+    let isMouseDown = false;
+    chartCanvas.addEventListener("mousedown", (e) => { isMouseDown = true; handleTouchMove(e); });
+    window.addEventListener("mousemove", (e) => { if (isMouseDown) handleTouchMove(e); });
+    window.addEventListener("mouseup", () => { if (isMouseDown) { isMouseDown = false; handleTouchEnd(); } });
+  }
+
+  document.querySelectorAll(".tf-btn").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll(".tf-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeModalTF = btn.dataset.tf;
+      if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+      updateBigChart();
+    };
+  });
+
+  const closeBtn = document.getElementById("closeChartBtn");
+  if (closeBtn) closeBtn.onclick = () => document.getElementById("chartModal").classList.add("hidden");
+
+  const langBtn = document.getElementById("langSwitchBtn");
+  if (langBtn) langBtn.onclick = () => document.getElementById("langModal").classList.remove("hidden");
+
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn) refreshBtn.onclick = () => load();
+
+  const langLabel = document.getElementById("currentLangLabel");
+  if (langLabel) langLabel.textContent = (I18N[currentLang] || I18N.uk).langShort;
+});
+
+// Запуск
+load();
+setInterval(load, REFRESH_MS);
