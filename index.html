@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>PumpDetector Pro</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- ?v=2 принудительно сбрасывает старый кеш Telegram -->
-  <link rel="stylesheet" href="style.css?v=2">
+  <!-- ?v=4 оновлює кеш Telegram -->
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
-  <!-- Модальное окно выбора языка -->
+  <!-- Модальне вікно вибору мови -->
   <div class="lang-modal-overlay hidden" id="langModal">
     <div class="lang-modal">
       <div class="lang-icon">🌐</div>
@@ -29,7 +29,7 @@
     </div>
   </div>
 
-  <!-- Модальное окно подробного графика (в стиле Скриншота 2) -->
+  <!-- Модальне вікно детального графіка -->
   <div class="chart-modal-overlay hidden" id="chartModal">
     <div class="chart-modal">
       <div class="chart-modal-header">
@@ -40,14 +40,17 @@
         <button class="btn-close-modal" id="closeChartBtn">✕</button>
       </div>
 
-      <!-- Переключатель таймфреймов как на скрине 2 -->
+      <!-- Періоди графіка -->
       <div class="tf-selector">
         <button class="tf-btn active" data-tf="1d">1 дн</button>
         <button class="tf-btn" data-tf="7d">7 дн</button>
         <button class="tf-btn" data-tf="1m">1 міс</button>
+        <button class="tf-btn" data-tf="1y">1 р</button>
+        <button class="tf-btn" data-tf="2y">2 р</button>
+        <button class="tf-btn" data-tf="5y">5 р</button>
       </div>
 
-      <!-- Большой график Canvas -->
+      <!-- Інтерактивне полотно з точкою -->
       <div class="big-chart-wrapper">
         <canvas id="bigChartCanvas"></canvas>
       </div>
@@ -81,7 +84,7 @@
     </div>
   </header>
 
-  <!-- Сетка монет -->
+  <!-- Сітка карток -->
   <main class="grid" id="grid">
     <div class="loading-state">
       <div class="spinner"></div>
@@ -89,7 +92,7 @@
     </div>
   </main>
 
-  <!-- ?v=2 сбрасывает старый js из памяти Telegram -->
-  <script src="script.js?v=2"></script>
+  <!-- Скрипт з вібро-відгуком -->
+  <script src="script.js?v=4"></script>
 </body>
 </html>
