@@ -16,7 +16,7 @@ const I18N = {
     signalSell: "● ПРОДАВАТИ",
     signalWait: "● ОЧІКУВАННЯ",
     langShort: "UA",
-    tf1d: "1 дн", tf7d: "7 дн", tf1m: "1 міс"
+    now: "Зараз"
   },
   en: {
     syncing: "Syncing...",
@@ -27,11 +27,10 @@ const I18N = {
     signalSell: "● SELL",
     signalWait: "● WAIT",
     langShort: "EN",
-    tf1d: "1d", tf7d: "7d", tf1m: "1m"
+    now: "Now"
   }
 };
 
-// Читаем язык из бота (?lang=ua / ?lang=en)
 const urlParams = new URLSearchParams(window.location.search);
 const paramLang = urlParams.get('lang') || tg?.initDataUnsafe?.start_param?.replace('lang_', '');
 
@@ -51,18 +50,22 @@ const HIGH_ZONE = 2;
 const REFRESH_MS = 10000;
 
 let lastMarketData = [];
-const klinesCache = {}; // Кэш: sym -> [candles]
+const klinesCache = {}; 
 let activeModalCoin = null;
 let activeModalTF = "1d";
 
-// Форматирование цены
+// Змінні для інтерактивного графіка
+let currentBigPrices = [];
+let lastHapticIndex = -1;
+let latestModalPrice = 0;
+
 function fmt(x) {
   if (x < 1) return "$" + x.toFixed(4);
   if (x < 10) return "$" + x.toFixed(3);
   return "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Загрузка свечей с Binance
+// Завантаження історичних свічок
 async function fetchKlines(sym, interval = "1h", limit = 24) {
   const cacheKey = `${sym}_${interval}_${limit}`;
   if (klinesCache[cacheKey]) return klinesCache[cacheKey];
@@ -76,12 +79,12 @@ async function fetchKlines(sym, interval = "1h", limit = 24) {
       return prices;
     }
   } catch (e) {
-    console.error("Ошибка свечей", e);
+    console.error("Помилка свічок", e);
   }
   return [];
 }
 
-// Отрисовка мини-графика на карточке (Золотой стиль Binance как на Скриншоте 2)
+// Міні-графік на картках
 function drawMiniSparkline(canvasId, prices) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !prices || prices.length < 2) return;
@@ -105,7 +108,6 @@ function drawMiniSparkline(canvasId, prices) {
     y: h - 4 - ((p - min) / range) * (h - 8)
   }));
 
-  // Золотистый градиент Binance
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "rgba(240, 185, 11, 0.35)");
   grad.addColorStop(1, "rgba(240, 185, 11, 0.0)");
@@ -119,7 +121,6 @@ function drawMiniSparkline(canvasId, prices) {
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Линия графика
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -130,8 +131,8 @@ function drawMiniSparkline(canvasId, prices) {
   ctx.stroke();
 }
 
-// Отрисовка большого графика в модальном окне (Точь-в-точь Скриншот 2)
-function drawBigChart(prices) {
+// Великий інтерактивний графік з точкою та прицілом
+function drawBigChart(prices, selectedIndex = null) {
   const canvas = document.getElementById("bigChartCanvas");
   if (!canvas || !prices || prices.length < 2) return;
 
@@ -149,14 +150,17 @@ function drawBigChart(prices) {
   const max = Math.max(...prices);
   const range = max - min || 1;
 
+  const startX = 6;
+  const endX = w - 6;
+
   const pts = prices.map((p, i) => ({
-    x: (i / (prices.length - 1)) * (w - 10) + 5,
-    y: h - 15 - ((p - min) / range) * (h - 30)
+    x: startX + (i / (prices.length - 1)) * (endX - startX),
+    y: h - 15 - ((p - min) / range) * (h - 32)
   }));
 
-  // Фоновая заливка градиентом
+  // Градієнт заливки
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, "rgba(240, 185, 11, 0.4)");
+  grad.addColorStop(0, "rgba(240, 185, 11, 0.38)");
   grad.addColorStop(1, "rgba(240, 185, 11, 0.0)");
 
   ctx.beginPath();
@@ -168,7 +172,7 @@ function drawBigChart(prices) {
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Линия
+  // Основна лінія графіка
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -178,164 +182,112 @@ function drawBigChart(prices) {
   ctx.lineJoin = "round";
   ctx.stroke();
 
-  // Горизонтальная пунктирная линия текущей цены
-  const lastY = pts[pts.length - 1].y;
-  ctx.beginPath();
-  ctx.setLineDash([4, 4]);
-  ctx.moveTo(0, lastY);
-  ctx.lineTo(w, lastY);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-  ctx.stroke();
-  ctx.setLineDash([]);
-}
+  // Якщо користувач веде пальцем — малюємо приціл і точку
+  if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < pts.length) {
+    const selPt = pts[selectedIndex];
 
-// Открытие подробного графика по клику на карточку
-async function openChartModal(sym, currentPrice) {
-  activeModalCoin = sym;
-  const modal = document.getElementById("chartModal");
-  document.getElementById("modalCoinName").textContent = `${sym.replace("USDT", "")}/USDT`;
-  document.getElementById("modalCoinPrice").textContent = fmt(currentPrice);
+    // 1. Вертикальна пунктирна лінія прицілу
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.moveTo(selPt.x, 0);
+    ctx.lineTo(selPt.x, h);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-  modal.classList.remove("hidden");
-  if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
+    // 2. Горизонтальна пунктирна лінія до ціни
+    ctx.beginPath();
+    ctx.setLineDash([3, 3]);
+    ctx.moveTo(0, selPt.y);
+    ctx.lineTo(w, selPt.y);
+    ctx.strokeStyle = "rgba(240, 185, 11, 0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-  await updateBigChart();
-}
+    // 3. Зовнішнє сяйво точки
+    ctx.beginPath();
+    ctx.arc(selPt.x, selPt.y, 9, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(240, 185, 11, 0.28)";
+    ctx.fill();
 
-async function updateBigChart() {
-  if (!activeModalCoin) return;
-  let interval = "1h", limit = 24;
-  if (activeModalTF === "7d") { interval = "4h"; limit = 42; }
-  if (activeModalTF === "1m") { interval = "1d"; limit = 30; }
+    // 4. Золоте кільце точки
+    ctx.beginPath();
+    ctx.arc(selPt.x, selPt.y, 5.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#F0B90B";
+    ctx.fill();
 
-  const prices = await fetchKlines(activeModalCoin, interval, limit);
-  drawBigChart(prices);
-}
+    // 5. Біле ядро всередині точки
+    ctx.beginPath();
+    ctx.arc(selPt.x, selPt.y, 2.8, 0, Math.PI * 2);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fill();
 
-// Вердикт
-function verdict(s) {
-  const price = parseFloat(s.lastPrice);
-  const low = parseFloat(s.lowPrice);
-  const high = parseFloat(s.highPrice);
-  const t = I18N[currentLang];
-
-  if (price <= low * (1 + LOW_ZONE / 100)) return ["buy", t.signalBuy];
-  if (price >= high * (1 - HIGH_ZONE / 100)) return ["sell", t.signalSell];
-  return ["wait", t.signalWait];
-}
-
-// Запрос котировок Binance
-async function load() {
-  const refreshBtn = document.getElementById("refreshBtn");
-  refreshBtn.classList.add("spinning");
-
-  try {
-    const res = await fetch("https://api.binance.com/api/v3/ticker/24hr");
-    const all = await res.json();
-    const map = {};
-    all.forEach(item => {
-      if (COINS.includes(item.symbol)) map[item.symbol] = item;
-    });
-
-    lastMarketData = COINS.map(s => map[s]).filter(Boolean);
-    render(lastMarketData);
-  } catch (e) {
-    document.getElementById("updated").textContent = I18N[currentLang].networkError;
-  } finally {
-    setTimeout(() => refreshBtn.classList.remove("spinning"), 500);
+  } else {
+    // Якщо палець відпущено — звичайна пунктирна лінія останньої ціни
+    const lastPt = pts[pts.length - 1];
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.moveTo(0, lastPt.y);
+    ctx.lineTo(w, lastPt.y);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 }
 
-// Отрисовка карточек
-function render(items) {
-  const grid = document.getElementById("grid");
-  grid.innerHTML = "";
-  const t = I18N[currentLang];
+// Обробка торкання пальцем графіка з вібровідгуком
+function handleTouchMove(e) {
+  if (!currentBigPrices || currentBigPrices.length < 2) return;
+  const canvas = document.getElementById("bigChartCanvas");
+  if (!canvas) return;
 
-  items.forEach(s => {
-    const sym = s.symbol;
-    const name = sym.replace("USDT", "");
-    const price = parseFloat(s.lastPrice);
-    const low = parseFloat(s.lowPrice);
-    const high = parseFloat(s.highPrice);
-    const chg = parseFloat(s.priceChangePercent);
-    const isUp = chg >= 0;
-    const [cls, text] = verdict(s);
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const touchX = clientX - rect.left;
 
-    let rangePct = Math.max(0, Math.min(100, ((price - low) / (high - low)) * 100));
+  const w = rect.width;
+  const startX = 6;
+  const endX = w - 6;
+  const clampedX = Math.max(startX, Math.min(endX, touchX));
 
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      <div class="card-top">
-        <span class="coin-symbol">${name}</span>
-        <span class="coin-pair">/USDT</span>
-      </div>
-      <div class="price">${fmt(price)}</div>
-      <div class="change ${isUp ? "up" : "down"}">${isUp ? "+ " : ""}${chg.toFixed(2)}%</div>
+  const ratio = (clampedX - startX) / (endX - startX);
+  const index = Math.round(ratio * (currentBigPrices.length - 1));
 
-      <!-- Золотистый график в карточке -->
-      <div class="card-chart-wrap">
-        <canvas class="mini-chart-canvas" id="chart-${sym}"></canvas>
-      </div>
+  // Якщо перейшли на нову точку — даємо тактильну вібрацію (клік)!
+  if (index !== lastHapticIndex) {
+    lastHapticIndex = index;
+    if (tg?.HapticFeedback) {
+      tg.HapticFeedback.selectionChanged(); // Легкий тактильний клік Telegram
+    } else if (navigator.vibrate) {
+      navigator.vibrate(8);
+    }
+  }
 
-      <div class="signal-badge ${cls}">${text}</div>
-      <div class="range-container">
-        <div class="range-bar-bg">
-          <div class="range-bar-fill" style="width: ${rangePct}%;"></div>
-        </div>
-        <div class="range-labels">
-          <span>L: ${fmt(low)}</span>
-          <span>H: ${fmt(high)}</span>
-        </div>
-      </div>
-    `;
+  // Оновлюємо ціну в заголовку на ціну обраної точки
+  const inspectedPrice = currentBigPrices[index];
+  document.getElementById("modalCoinPrice").textContent = fmt(inspectedPrice);
+  document.getElementById("modalCoinPrice").classList.add("inspecting");
 
-    // Клик открывает график на весь экран
-    card.onclick = () => openChartModal(sym, price);
-
-    grid.appendChild(card);
-
-    // Рисуем мини-график
-    fetchKlines(sym, "1h", 24).then(prices => {
-      drawMiniSparkline(`chart-${sym}`, prices);
-    });
-  });
-
-  const now = new Date();
-  document.getElementById("updated").textContent =
-    t.updated + " " + now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  drawBigChart(currentBigPrices, index);
 }
 
-function selectLanguage(lang) {
-  currentLang = lang;
-  localStorage.setItem("user_lang", lang);
-  document.getElementById("langModal").classList.add("hidden");
-  document.getElementById("currentLangLabel").textContent = I18N[currentLang].langShort;
-  if (lastMarketData.length) render(lastMarketData);
+function handleTouchEnd() {
+  lastHapticIndex = -1;
+  // Повертаємо останню актуальну ціну через 800 мс після відпускання
+  setTimeout(() => {
+    if (lastHapticIndex === -1 && latestModalPrice) {
+      document.getElementById("modalCoinPrice").textContent = fmt(latestModalPrice);
+      document.getElementById("modalCoinPrice").classList.remove("inspecting");
+      drawBigChart(currentBigPrices, null);
+    }
+  }, 800);
 }
 
-// Привязка кнопок таймфреймов в модальном окне
-document.querySelectorAll(".tf-btn").forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll(".tf-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    activeModalTF = btn.dataset.tf;
-    updateBigChart();
-  };
-});
-
-document.getElementById("closeChartBtn").onclick = () => {
-  document.getElementById("chartModal").classList.add("hidden");
-};
-
-document.getElementById("langSwitchBtn").onclick = () => {
-  document.getElementById("langModal").classList.remove("hidden");
-};
-
-document.getElementById("refreshBtn").onclick = () => load();
-
-// Старт
-document.getElementById("currentLangLabel").textContent = I18N[currentLang].langShort;
-load();
-setInterval(load, REFRESH_MS);
+// Прив'язка сенсорних подій до полотна графіка
+const chartCanvas = document.getElementById("bigChartCanvas");
+if (chartCanvas) {
+  chartCanvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    handl
