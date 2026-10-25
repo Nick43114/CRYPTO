@@ -58,10 +58,10 @@ body {
 .btn-action:active { transform: scale(0.92); }
 .refresh-icon { width: 17px; height: 17px; stroke: var(--text-secondary); }
 
-/* СЕТКА */
+/* СІТКА */
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-/* КАРТОЧКА */
+/* КАРТКА */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -82,7 +82,7 @@ body {
 .up { color: var(--green); }
 .down { color: var(--red); }
 
-/* МИНИ-ГРАФИК В КАРТОЧКЕ */
+/* МІНІ-ГРАФІК У КАРТЦІ */
 .card-chart-wrap {
   width: 100%;
   height: 42px;
@@ -94,7 +94,7 @@ body {
   display: block;
 }
 
-/* СИГНАЛЫ */
+/* СИГНАЛИ */
 .signal-badge {
   text-align: center;
   font-size: 10px;
@@ -108,13 +108,13 @@ body {
 .signal-badge.sell { background: var(--red-bg); color: var(--red); border: 1px solid rgba(246,70,93,0.3); }
 .signal-badge.wait { background: var(--yellow-bg); color: var(--binance-yellow); border: 1px solid rgba(252,213,53,0.3); }
 
-/* ДИАПАЗОН */
+/* ДІАПАЗОН */
 .range-container { margin-top: auto; }
 .range-bar-bg { width: 100%; height: 4px; background: #2b313a; border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
 .range-bar-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--binance-yellow)); }
 .range-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
 
-/* МОДАЛЬНЫЙ БОЛЬШОЙ ГРАФИК (КАК НА СКРИНШОТЕ 2) */
+/* МОДАЛЬНЕ ВІКНО ВЕЛИКОГО ГРАФІКА */
 .chart-modal-overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.85);
@@ -139,31 +139,69 @@ body {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
 }
 .modal-coin-title { font-size: 18px; font-weight: 700; color: #fff; margin-right: 10px; }
-.modal-coin-price { font-size: 18px; font-weight: 800; color: var(--chart-gold); }
+.modal-coin-price {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--chart-gold);
+  transition: color 0.1s ease;
+}
+.modal-coin-price.inspecting {
+  color: #fff;
+  text-shadow: 0 0 10px rgba(240, 185, 11, 0.6);
+}
+
 .btn-close-modal {
   background: #2b313a; border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; font-size: 14px; cursor: pointer;
 }
 
-.tf-selector { display: flex; gap: 8px; margin-bottom: 12px; }
-.tf-btn {
-  background: #202630; border: none; color: var(--text-secondary);
-  padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer;
+/* ПЕРЕМИКАЧ ПЕРІОДІВ */
+.tf-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
-.tf-btn.active { background: #2b313a; color: #fff; }
+.tf-selector::-webkit-scrollbar { display: none; }
 
+.tf-btn {
+  background: #202630;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.tf-btn.active { background: #2b313a; color: #fff; border: 1px solid rgba(255,255,255,0.15); }
+
+/* ОБГОРТКА ВЕЛИКОГО ГРАФІКА */
 .big-chart-wrapper {
   width: 100%;
   height: 220px;
   position: relative;
+  touch-action: none; /* Забороняє скрол сторінки при веденні пальцем по графіку */
+  user-select: none;
 }
-#bigChartCanvas { width: 100%; height: 100%; display: block; }
+#bigChartCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
 
 .chart-labels-row {
   display: flex; justify-content: space-between;
   font-size: 11px; color: var(--text-muted); margin-top: 8px; padding: 0 4px;
 }
 
-/* МОДАЛКА ЯЗЫКА */
+/* МОДАЛЬНЕ ВІКНО МОВИ */
 .lang-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10001;
   display: flex; align-items: center; justify-content: center; padding: 20px;
@@ -181,7 +219,6 @@ body {
 .btn-lang-choice strong { display: block; font-size: 14px; }
 .btn-lang-choice small { font-size: 11px; color: var(--text-secondary); }
 
-/* СПИННЕР */
+/* СПІНЕР */
 .loading-state { grid-column: 1 / -1; text-align: center; padding: 60px 0; color: var(--text-secondary); }
-.spinner { width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--binance-yellow); border-radius: 50%; margin: 0 auto 10px; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 30px
